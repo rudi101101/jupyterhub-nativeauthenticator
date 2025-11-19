@@ -236,7 +236,7 @@ class ToggleAuthorizationHandler(LocalBase):
     @admin_users_scope
     async def get(self, slug):
         UserInfo.change_authorization(self.db, slug)
-        self.redirect(self.hub.base_url + "authorize#" + slug)
+        self.redirect(self.hub.base_url + "native/authorize#" + slug)
 
 
 class EmailAuthorizationHandler(LocalBase):
@@ -458,6 +458,24 @@ class LoginHandler(LoginHandler, LocalBase):
 
     def _render(self, login_error=None, username=None):
         """For 'normal' rendering."""
+        self.log.info(f"""
+            ============= BEFORE RENDERING LOGIN PAGE =============
+            [NativeAuthenticator] Debug login rendering:
+            hub.base_url = {self.hub.base_url}
+            login_url = {self.settings.get('login_url')}
+            authenticator_login_url = {self.authenticator.login_url(self.hub.base_url)}
+            next = {self.get_argument('next', '')}
+        """)
+        
+
+        self.log.info(f"""
+            ============= ADJUSTMENT RENDERING LOGIN PAGE =============
+            [NativeAuthenticator] Debug login rendering:
+            hub.base_url = {self.hub.base_url}
+            login_url = {self.settings.get('login_url')}
+            authenticator_login_url = {self.authenticator.login_url(self.hub.base_url)}
+            next = {self.get_argument('next', '')}
+        """)
 
         return self.render_template(
             "native-login.html",
@@ -528,4 +546,4 @@ class DiscardHandler(LocalBase):
                 if self.users.get(user_name) is not None:
                     self.users.delete(user_name)
 
-        self.redirect(self.hub.base_url + "authorize")
+        self.redirect(self.hub.base_url + "native/authorize")

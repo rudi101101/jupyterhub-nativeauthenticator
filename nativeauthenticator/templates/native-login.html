@@ -32,7 +32,7 @@
 {% block main %}
 {% block login %}
 <div id="login-main" class="container">
-    <form action="{{login_url}}?next={{next}}" method="post" role="form">
+    <form action="{{authenticator_login_url}}?next={{next}}" method="post" role="form">
         <div class="auth-form-header">
             Sign In
         </div>
@@ -74,7 +74,8 @@
             {% if enable_signup %}
             <hr />
             <p>
-                <a href="{{ base_url }}signup"> Sign up</a> to create a new user.
+                <!-- <a href="{{ base_url }}signup"> Sign up</a> to create a new user. -->
+                <a href="{{ authenticator_login_url | replace('login', 'signup') }}">Sign up</a> to create a new user.
             </p>
             {% endif %}
         </div>

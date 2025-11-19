@@ -13,6 +13,10 @@ from sqlalchemy import inspect
 from tornado import web
 from traitlets import Bool, Dict, Integer, Tuple, Unicode
 
+# Tambah import di bagian atas file (jika belum ada)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, scoped_session
+
 from .crypto.signing import Signer
 from .handlers import (
     AuthorizationAreaHandler,
@@ -178,6 +182,54 @@ class NativeAuthenticator(Authenticator):
 
         self.setup_self_approval()
 
+    def init_db(self, db_url: str):
+        """
+        Initialize DB engine and session for NativeAuthenticator.
+        Can be called manually from MultiAuthenticator wrapper:
+            authenticator.init_db(db_url)
+        """
+        try:
+            # create engine and tables
+            engine = create_engine(db_url, pool_pre_ping=True)
+            # Base berasal dari nativeauthenticator.orm (UserInfo didefinisikan di sana)
+            from .orm import Base as NativeBase
+            NativeBase.metadata.create_all(engine)
+
+            # optionally create jupyterhub tables if needed (safe to ignore if not available)
+            try:
+                from jupyterhub.orm import Base as JHBase
+                JHBase.metadata.create_all(engine)
+            except Exception:
+                # jupyterhub.orm might not be importable in some contexts; ignore if so
+                pass
+
+            # create a scoped session factory and bind one session to self.db
+            SessionFactory = scoped_session(sessionmaker(bind=engine))
+            self.db = SessionFactory()
+            # keep references so the session isn't garbage-collected
+            self._engine = engine
+            self._session_factory = SessionFactory
+
+            # If add_new_table was deferred earlier, ensure tables exist
+            try:
+                self.add_new_table()
+            except Exception:
+                # ignore table creation errors here (add_new_table has its own checks)
+                pass
+
+            # log / print for debugging (useful inside docker logs)
+            try:
+                self.log.info(f"[NativeAuthenticator] init_db success ({db_url})")
+            except Exception:
+                print(f"[NativeAuthenticator] init_db success ({db_url})", flush=True)
+
+        except Exception as e:
+            try:
+                self.log.error(f"[NativeAuthenticator] init_db failed: {e}")
+            except Exception:
+                print(f"[NativeAuthenticator] init_db failed: {e}", flush=True)
+            raise
+
     def setup_self_approval(self):
         if self.allow_self_approval_for:
             if self.open_signup:
@@ -189,10 +241,27 @@ class NativeAuthenticator(Authenticator):
                     "len > 8 when using self_approval"
                 )
 
+    # def add_new_table(self):
+    #     inspector = inspect(self.db.bind)
+    #     if "users_info" not in inspector.get_table_names():
+    #         UserInfo.__table__.create(self.db.bind)
+
+    # update add_new_table to be resilient if self.db is None
     def add_new_table(self):
-        inspector = inspect(self.db.bind)
+        # if db not initialized yet, create tables via engine if available or skip
+        if getattr(self, "db", None) is None:
+            # try using stored engine (if present)
+            engine = getattr(self, "_engine", None)
+            if engine is None:
+                # nothing to do yet
+                return
+            inspector = inspect(engine)
+        else:
+            inspector = inspect(self.db.bind)
+
+        # table name might be "users_info" or "user_info" depending on ORM - stick to current code
         if "users_info" not in inspector.get_table_names():
-            UserInfo.__table__.create(self.db.bind)
+            UserInfo.__table__.create(self.db.bind if getattr(self, "db", None) else engine)
 
     def add_login_attempt(self, username):
         if not self.login_attempts.get(username):
